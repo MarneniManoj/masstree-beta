@@ -2,7 +2,7 @@ AR = ar
 CC = clang
 CXX = /opt/opencilk/bin/clang++
 CPPFLAGS = 
-CXXFLAGS = -g -W -Wall -fopencilk -O3 
+CXXFLAGS = -g -W -Wall -fopencilk -O0
 RANLIB = ranlib
 DEPSDIR := .deps
 DEPCFLAGS = -MD -MF $(DEPSDIR)/$*.d -MP
@@ -22,7 +22,7 @@ endif
 LIBS = -lnuma  -lpthread -lm
 LDFLAGS = 
 
-all: test_atomics mtd mtclient mttest
+all: test_atomics mtd mtclient mttest ycsb
 
 %.o: %.c config.h $(DEPSDIR)/stamp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEPCFLAGS) -include config.h -c -o $@ $<
@@ -49,6 +49,10 @@ mtd: mtd.o log.o checkpoint.o file.o misc.o $(KVTREES) \
 
 mtclient: mtclient.o misc.o testrunner.o kvio.o libjson.a
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
+
+ycsb: ycsb.o misc.o checkpoint.o $(KVTREES) testrunner.o \
+	kvio.o libjson.a
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(MEMMGR) $(LDFLAGS) $(LIBS)
 
 mttest: mttest.o misc.o checkpoint.o $(KVTREES) testrunner.o \
 	kvio.o libjson.a

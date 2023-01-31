@@ -1,4 +1,6 @@
-#include "kvtest.hh"
+#include "masstree.hh"
+#include "query_masstree.hh"
+#include "mttest.cc"
 #include <iostream>
 #include <chrono>
 #include <random>
@@ -112,7 +114,7 @@ void ycsb_load_run_string(int index_type, int wl, int kt, int ap, int num_thread
 }
 
 template <typename F> inline void parallel_for(size_t start, size_t end, F f) {
-  cilk_for(size_t i = start; i < end; i++) f(i);
+  for(size_t i = start; i < end; i++) f(i);
 }
 
 template <class T>
@@ -128,8 +130,7 @@ std::vector<T> create_random_data(size_t n, size_t max_val,
   return v;
 }
 
-template <typename C>
-void ycsb_load_run_randint(C &client, int index_type, int wl, int kt, int ap, int num_thread,
+void ycsb_load_run_randint( int index_type, int wl, int kt, int ap, int num_thread,
         std::vector<uint64_t> &init_keys,
         std::vector<uint64_t> &keys,
         std::vector<uint64_t> &range_end,
@@ -268,6 +269,7 @@ void ycsb_load_run_randint(C &client, int index_type, int wl, int kt, int ap, in
     //     for(int k =0; k<6; k++){
             std::vector<uint64_t> query_results_keys(RUN_SIZE);
             std::vector<uint64_t> query_results_vals(RUN_SIZE);
+            kvtest_client<Masstree::default_table> client;
             {
                 // Load
                 auto starttime = get_usecs(); // std::chrono::system_clock::now();
@@ -295,14 +297,14 @@ void ycsb_load_run_randint(C &client, int index_type, int wl, int kt, int ap, in
                         std::vector<Str> found_keys, values;
                         client.scan_sync(search_key.string(), ranges[i], found_keys, values);
                         
-                        // uint64_t key_sum = 0, val_sum = 0;
+                        uint64_t key_sum = 0, val_sum = 0;
 
-                        // for (size_t j = 0; j < values.size(); ++j) {
-                        //     key_sum += found_keys[j].to_i();
-                        //     val_sum += values[j].to_i();
-                        // }
-                        // query_results_keys[i] = key_sum;
-                        // query_results_vals[i] = val_sum;
+                        for (size_t j = 0; j < values.size(); ++j) {
+                            key_sum += found_keys[j].to_i();
+                            val_sum += values[j].to_i();
+                        }
+                        query_results_keys[i] = key_sum;
+                        query_results_vals[i] = val_sum;
                         client.rcu_quiesce();
                     // } else if (ops[i] == OP_SCAN_END) {
 			        //     uint64_t key_sum = 0, val_sum = 0;
@@ -336,128 +338,8 @@ void ycsb_load_run_randint(C &client, int index_type, int wl, int kt, int ap, in
     // }
 }
 
-template <typename C>
-void kvtest_ycsb(C &client){
-        std::vector<uint64_t> init_keys;
-        std::vector<uint64_t> keys;
-        std::vector<uint64_t> ranges_end;
-        std::vector<int> ranges;
-        std::vector<int> ops;
-
-        init_keys.reserve(LOAD_SIZE);
-        keys.reserve(RUN_SIZE);
-        ranges_end.reserve(RUN_SIZE);
-        ranges.reserve(RUN_SIZE);
-        ops.reserve(RUN_SIZE);
-
-        memset(&init_keys[0], 0x00, LOAD_SIZE * sizeof(uint64_t));
-        memset(&keys[0], 0x00, RUN_SIZE * sizeof(uint64_t));
-        memset(&ranges_end[0], 0x00, RUN_SIZE * sizeof(uint64_t));
-        memset(&ranges[0], 0x00, RUN_SIZE * sizeof(int));
-        memset(&ops[0], 0x00, RUN_SIZE * sizeof(int));
-
-        int index_type = TYPE_BTREE;
-        int wl = WORKLOAD_A;
-        int kt = RANDINT_KEY;
-        int ap = UNIFORM;
-        int num_thread = 4;
-        ycsb_load_run_randint(client, index_type, wl, kt, ap, num_thread, init_keys, keys,ranges_end, ranges, ops);
-
-        // wl = WORKLOAD_E;
-        // ycsb_load_run_randint(client, index_type, wl, kt, ap, num_thread, init_keys, keys,ranges_end, ranges, ops);
-
-}
-
-
-// int main(int argc, char **argv) {
-//     if (argc != 6) {
-//         std::cout << "Usage: ./ycsb [index type] [ycsb workload type] [key distribution] [access pattern] [number of threads]\n";
-//         std::cout << "1. index type: art hot bwtree masstree clht\n";
-//         std::cout << "               fastfair levelhash cceh woart\n";
-//         std::cout << "2. ycsb workload type: a, b, c, e\n";
-//         std::cout << "3. key distribution: randint, string\n";
-//         std::cout << "4. access pattern: uniform, zipfian\n";
-//         std::cout << "5. number of threads (integer)\n";
-//         return 1;
-//     }
-
-//     printf("%s, workload%s, %s, %s, threads %s\n", argv[1], argv[2], argv[3], argv[4], argv[5]);
-
-//     int index_type;
-//     if (strcmp(argv[1], "art") == 0)
-//         index_type = TYPE_ART;
-
-//     else if (strcmp(argv[1], "btree") == 0)
-//         index_type = TYPE_BTREE;
-//     else if (strcmp(argv[1], "hot") == 0) {
-// #ifdef HOT
-//         index_type = TYPE_HOT;
-// #else
-//         return 1;
-// #endif
-//     } else if (strcmp(argv[1], "bwtree") == 0)
-//         index_type = TYPE_BWTREE;
-//     else if (strcmp(argv[1], "masstree") == 0)
-//         index_type = TYPE_MASSTREE;
-//     else if (strcmp(argv[1], "clht") == 0)
-//         index_type = TYPE_CLHT;
-//     else if (strcmp(argv[1], "fastfair") == 0)
-//         index_type = TYPE_FASTFAIR;
-//     else if (strcmp(argv[1], "levelhash") == 0)
-//         index_type = TYPE_LEVELHASH;
-//     else if (strcmp(argv[1], "cceh") == 0)
-//         index_type = TYPE_CCEH;
-//     else if (strcmp(argv[1], "woart") == 0)
-//         index_type = TYPE_WOART;
-//     else {
-//         fprintf(stderr, "Unknown index type: %s\n", argv[1]);
-//         exit(1);
-//     }
-
-//     int wl;
-//     if (strcmp(argv[2], "a") == 0) {
-//         wl = WORKLOAD_A;
-//     } else if (strcmp(argv[2], "b") == 0) {
-//         wl = WORKLOAD_B;
-//     } else if (strcmp(argv[2], "c") == 0) {
-//         wl = WORKLOAD_C;
-//     } else if (strcmp(argv[2], "d") == 0) {
-//         wl = WORKLOAD_D;
-//     } else if (strcmp(argv[2], "e") == 0) {
-//         wl = WORKLOAD_E;
-//     } else if (strcmp(argv[2], "x") == 0) {
-//         wl = WORKLOAD_X;
-//     } else if (strcmp(argv[2], "y") == 0) {
-//         wl = WORKLOAD_Y;
-//     } else {
-//         fprintf(stderr, "Unknown workload: %s\n", argv[2]);
-//         exit(1);
-//     }
-
-//     int kt;
-//     if (strcmp(argv[3], "randint") == 0) {
-//         kt = RANDINT_KEY;
-//     } else if (strcmp(argv[3], "string") == 0) {
-//         kt = STRING_KEY;
-//     } else {
-//         fprintf(stderr, "Unknown key type: %s\n", argv[3]);
-//         exit(1);
-//     }
-
-//     int ap;
-//     if (strcmp(argv[4], "uniform") == 0) {
-//         ap = UNIFORM;
-//     } else if (strcmp(argv[4], "zipfian") == 0) {
-//         ap = ZIPFIAN;
-//     } else {
-//         fprintf(stderr, "Unknown access pattern: %s\n", argv[4]);
-//         exit(1);
-//     }
-
-//     int num_thread = atoi(argv[5]);
-//     // tbb::task_scheduler_init init(num_thread);
-
-//     if (kt != STRING_KEY) {
+// template <typename C>
+// void kvtest_ycsb(C &client){
 //         std::vector<uint64_t> init_keys;
 //         std::vector<uint64_t> keys;
 //         std::vector<uint64_t> ranges_end;
@@ -476,25 +358,145 @@ void kvtest_ycsb(C &client){
 //         memset(&ranges[0], 0x00, RUN_SIZE * sizeof(int));
 //         memset(&ops[0], 0x00, RUN_SIZE * sizeof(int));
 
-//         // ycsb_load_run_randint(index_type, wl, kt, ap, num_thread, init_keys, keys,ranges_end, ranges, ops);
-//     } else {
-//         // std::vector<Key *> init_keys;
-//         // std::vector<Key *> keys;
-//         // std::vector<int> ranges;
-//         // std::vector<int> ops;
+//         int index_type = TYPE_BTREE;
+//         int wl = WORKLOAD_A;
+//         int kt = RANDINT_KEY;
+//         int ap = UNIFORM;
+//         int num_thread = 4;
+//         ycsb_load_run_randint(client, index_type, wl, kt, ap, num_thread, init_keys, keys,ranges_end, ranges, ops);
 
-//         // init_keys.reserve(LOAD_SIZE);
-//         // keys.reserve(RUN_SIZE);
-//         // ranges.reserve(RUN_SIZE);
-//         // ops.reserve(RUN_SIZE);
+//         // wl = WORKLOAD_E;
+//         // ycsb_load_run_randint(client, index_type, wl, kt, ap, num_thread, init_keys, keys,ranges_end, ranges, ops);
 
-//         // memset(&init_keys[0], 0x00, LOAD_SIZE * sizeof(Key *));
-//         // memset(&keys[0], 0x00, RUN_SIZE * sizeof(Key *));
-//         // memset(&ranges[0], 0x00, RUN_SIZE * sizeof(int));
-//         // memset(&ops[0], 0x00, RUN_SIZE * sizeof(int));
-
-//         // ycsb_load_run_string(index_type, wl, kt, ap, num_thread, init_keys, keys, ranges, ops);
-//     }
-
-//     return 0;
 // }
+
+
+int main(int argc, char **argv) {
+    if (argc != 6) {
+        std::cout << "Usage: ./ycsb [index type] [ycsb workload type] [key distribution] [access pattern] [number of threads]\n";
+        std::cout << "1. index type: art hot bwtree masstree clht\n";
+        std::cout << "               fastfair levelhash cceh woart\n";
+        std::cout << "2. ycsb workload type: a, b, c, e\n";
+        std::cout << "3. key distribution: randint, string\n";
+        std::cout << "4. access pattern: uniform, zipfian\n";
+        std::cout << "5. number of threads (integer)\n";
+        return 1;
+    }
+
+    printf("%s, workload%s, %s, %s, threads %s\n", argv[1], argv[2], argv[3], argv[4], argv[5]);
+
+    int index_type;
+    if (strcmp(argv[1], "art") == 0)
+        index_type = TYPE_ART;
+
+    else if (strcmp(argv[1], "btree") == 0)
+        index_type = TYPE_BTREE;
+    else if (strcmp(argv[1], "hot") == 0) {
+#ifdef HOT
+        index_type = TYPE_HOT;
+#else
+        return 1;
+#endif
+    } else if (strcmp(argv[1], "bwtree") == 0)
+        index_type = TYPE_BWTREE;
+    else if (strcmp(argv[1], "masstree") == 0)
+        index_type = TYPE_MASSTREE;
+    else if (strcmp(argv[1], "clht") == 0)
+        index_type = TYPE_CLHT;
+    else if (strcmp(argv[1], "fastfair") == 0)
+        index_type = TYPE_FASTFAIR;
+    else if (strcmp(argv[1], "levelhash") == 0)
+        index_type = TYPE_LEVELHASH;
+    else if (strcmp(argv[1], "cceh") == 0)
+        index_type = TYPE_CCEH;
+    else if (strcmp(argv[1], "woart") == 0)
+        index_type = TYPE_WOART;
+    else {
+        fprintf(stderr, "Unknown index type: %s\n", argv[1]);
+        exit(1);
+    }
+
+    int wl;
+    if (strcmp(argv[2], "a") == 0) {
+        wl = WORKLOAD_A;
+    } else if (strcmp(argv[2], "b") == 0) {
+        wl = WORKLOAD_B;
+    } else if (strcmp(argv[2], "c") == 0) {
+        wl = WORKLOAD_C;
+    } else if (strcmp(argv[2], "d") == 0) {
+        wl = WORKLOAD_D;
+    } else if (strcmp(argv[2], "e") == 0) {
+        wl = WORKLOAD_E;
+    } else if (strcmp(argv[2], "x") == 0) {
+        wl = WORKLOAD_X;
+    } else if (strcmp(argv[2], "y") == 0) {
+        wl = WORKLOAD_Y;
+    } else {
+        fprintf(stderr, "Unknown workload: %s\n", argv[2]);
+        exit(1);
+    }
+
+    int kt;
+    if (strcmp(argv[3], "randint") == 0) {
+        kt = RANDINT_KEY;
+    } else if (strcmp(argv[3], "string") == 0) {
+        kt = STRING_KEY;
+    } else {
+        fprintf(stderr, "Unknown key type: %s\n", argv[3]);
+        exit(1);
+    }
+
+    int ap;
+    if (strcmp(argv[4], "uniform") == 0) {
+        ap = UNIFORM;
+    } else if (strcmp(argv[4], "zipfian") == 0) {
+        ap = ZIPFIAN;
+    } else {
+        fprintf(stderr, "Unknown access pattern: %s\n", argv[4]);
+        exit(1);
+    }
+
+    int num_thread = atoi(argv[5]);
+    // tbb::task_scheduler_init init(num_thread);
+
+    if (kt != STRING_KEY) {
+        std::vector<uint64_t> init_keys;
+        std::vector<uint64_t> keys;
+        std::vector<uint64_t> ranges_end;
+        std::vector<int> ranges;
+        std::vector<int> ops;
+
+        init_keys.reserve(LOAD_SIZE);
+        keys.reserve(RUN_SIZE);
+        ranges_end.reserve(RUN_SIZE);
+        ranges.reserve(RUN_SIZE);
+        ops.reserve(RUN_SIZE);
+
+        memset(&init_keys[0], 0x00, LOAD_SIZE * sizeof(uint64_t));
+        memset(&keys[0], 0x00, RUN_SIZE * sizeof(uint64_t));
+        memset(&ranges_end[0], 0x00, RUN_SIZE * sizeof(uint64_t));
+        memset(&ranges[0], 0x00, RUN_SIZE * sizeof(int));
+        memset(&ops[0], 0x00, RUN_SIZE * sizeof(int));
+
+        ycsb_load_run_randint(index_type, wl, kt, ap, num_thread, init_keys, keys,ranges_end, ranges, ops);
+    } else {
+        // std::vector<Key *> init_keys;
+        // std::vector<Key *> keys;
+        // std::vector<int> ranges;
+        // std::vector<int> ops;
+
+        // init_keys.reserve(LOAD_SIZE);
+        // keys.reserve(RUN_SIZE);
+        // ranges.reserve(RUN_SIZE);
+        // ops.reserve(RUN_SIZE);
+
+        // memset(&init_keys[0], 0x00, LOAD_SIZE * sizeof(Key *));
+        // memset(&keys[0], 0x00, RUN_SIZE * sizeof(Key *));
+        // memset(&ranges[0], 0x00, RUN_SIZE * sizeof(int));
+        // memset(&ops[0], 0x00, RUN_SIZE * sizeof(int));
+
+        // ycsb_load_run_string(index_type, wl, kt, ap, num_thread, init_keys, keys, ranges, ops);
+    }
+
+    return 0;
+}
